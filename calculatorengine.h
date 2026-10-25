@@ -2,6 +2,7 @@
 #define CALCULATORENGINE_H
 
 #include <QString>
+#include <QVector>
 
 /*!
  * \brief 计算器上可被按下的所有“键”。
@@ -48,6 +49,18 @@ enum class CalculatorKey {
 };
 
 /*!
+ * \brief 一条已完成的计算记录，例如 "12.5 × 4 =" → "50"。
+ *
+ * 历史由 CalculatorEngine 统一保存而不是由界面保存，
+ * 这样“记住算过哪些式子”同样能被单元测试覆盖，界面只负责展示。
+ */
+struct CalculationRecord
+{
+    QString expression;  ///< 算式文本，已包含末尾的 " ="
+    QString result;      ///< 该算式的结果（格式化后的文本）
+};
+
+/*!
  * \brief 计算器的纯逻辑核心，不依赖任何界面类。
  *
  * 内部用一个显式状态机描述“当前处于什么输入阶段”，
@@ -59,6 +72,9 @@ class CalculatorEngine
 public:
     /// 一个操作数最多允许输入的位数，避免显示溢出与 double 精度失真
     static constexpr int kMaxInputDigits = 16;
+
+    /// 历史记录条数上限，避免长时间使用后无限增长
+    static constexpr int kMaxHistoryRecords = 50;
 
     CalculatorEngine();
 
@@ -76,6 +92,25 @@ public:
 
     /// 是否已经存过内存值（用于界面上的 M 指示灯）
     bool hasMemory() const { return m_hasMemory; }
+
+    /// 内存值的显示文本，供 M 键面板展示
+    QString memoryText() const { return formatNumber(m_memory); }
+
+    /*!
+     * \brief 已完成的计算记录，按时间先后排列（最后一条是最新的）。
+     *
+     * 只记录真正按下 "=" 得出的式子；除零等失败的计算不会进入历史。
+     */
+    const QVector<CalculationRecord> &history() const { return m_history; }
+
+    /// 清空历史记录（当前显示与内存值都不受影响）
+    void clearHistory();
+
+    /*!
+     * \brief 把某条历史记录回填到主显示区。
+     * \param index history() 中的下标，非法下标会被忽略。
+     */
+    void recallHistory(int index);
 
     /// 是否处于错误状态（如除数为 0）
     bool isError() const { return m_state == State::Error; }
@@ -113,6 +148,7 @@ private:
     void showValue(double value);                           ///< 显示数值并把状态置为 Result
     void showError(const QString &message);                ///< 进入错误状态
     CalcStatus calculate(double lhs, double rhs, CalculatorKey op, double *result) const;
+    void appendHistory(const QString &expression, const QString &result); ///< 追加一条计算记录
 
     static bool isDigitKey(CalculatorKey key);
     static int digitOf(CalculatorKey key);
@@ -141,6 +177,9 @@ private:
     // 内存
     double m_memory = 0.0;
     bool m_hasMemory = false;
+
+    /// 已完成的计算记录，界面上的 M 键面板按倒序展示
+    QVector<CalculationRecord> m_history;
 };
 
 #endif // CALCULATORENGINE_H

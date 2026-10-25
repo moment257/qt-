@@ -260,11 +260,8 @@
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
        <property name="toolTip">
-        <string>内存历史列表（本示例未实现）</string>
+        <string>查看计算历史（Ctrl+H）</string>
        </property>
         <property name="text">
          <string>M▾</string>

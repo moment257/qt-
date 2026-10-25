@@ -14,6 +14,7 @@
 - **退格 / 清除**：`⌫` 逐位退格、`CE` 只清当前操作数、`C` 全清
 - **一元运算**：`1/x`、`x²`、`√x`、`%`、`±`
 - **内存**：`MC / MR / M+ / M− / MS`，存储状态由显示区左上角的 `M` 指示
+- **计算历史**：点 `M▾`（或 `Ctrl+H`）弹出历史面板，能看到之前算过的式子，点任意一条可回填结果
 - **键盘操作**：与鼠标点击完全等价，按下时对应按钮会闪一下作为反馈
 - **异常处理**：除以 0、负数开方、数值溢出统一进入错误态，只允许清除键恢复
 
@@ -45,11 +46,12 @@ cmake --build build
 ```
 ├── main.cpp                 程序入口
 ├── calculate.ui             界面（Qt Designer 搭建，详见 docs/界面搭建步骤.md）
-├── calculate.h/.cpp         主窗口：按键绑定、键盘事件、样式、显示刷新
-├── calculatorengine.h/.cpp  计算核心：状态机 + 四则运算 + 边界处理（不依赖界面）
+├── calculate.h/.cpp         主窗口：按键绑定、键盘事件、样式、显示刷新、历史面板调度
+├── calculatorengine.h/.cpp  计算核心：状态机 + 四则运算 + 边界处理 + 历史记录（不依赖界面）
+├── historypanel.h/.cpp      点 M▾ 弹出的“计算历史”浮层（只负责展示与点击，不存数据）
 ├── keymapping.h/.cpp        键盘键值 → 计算器按键的映射（可独立测试）
 ├── tests/
-│   └── tst_calculatorengine.cpp   Qt Test 单元测试（30 个用例）
+│   └── tst_calculatorengine.cpp   Qt Test 单元测试（39 个用例）
 └── docs/
     ├── 界面搭建步骤.md       在 UI 编辑器里还原界面的详细步骤
     ├── screenshot.png        界面截图（输入中）
@@ -97,6 +99,36 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
   不用为 24 个按钮各写一段 `connect`
 - 样式集中在一份 QSS，靠 objectName 选择器区分按钮类别，避免逐个按钮设样式
 
+### 4.4 计算历史（M▾ 面板）
+
+历史不是界面自己攒的，而是**由 `CalculatorEngine` 记，界面只负责显示**：
+
+```
+按下 = 成功  →  applyEquals()  →  appendHistory("12.5 × 4 =", "50")   // 引擎侧
+点 M▾ / Ctrl+H → toggleHistoryPanel() → setContent(内存值, history())  // 界面侧
+点某一行       → recordActivated(index) → recallHistory(index) → refreshDisplay()
+```
+
+这样安排的好处：
+
+- 历史逻辑能被单元测试覆盖（`tests/` 里有 8 个历史相关用例），不需要启动界面去点；
+- 界面层不用维护第二份“算过什么”的状态，不会出现和历史不同步的情况。
+
+几条明确的语义：
+
+| 行为 | 处理方式 |
+| --- | --- |
+| 记录范围 | 只有真正按下 `=` 得到结果的计算才入栈；连续运算的中间步骤不算一次“式子” |
+| 保存顺序 | 引擎按时间先后保存，面板倒序展示，最新一条在最上面 |
+| 条数上限 | 最多 50 条，超出后丢弃最早的，避免长时间运行无限增长 |
+| 失败的计算 | 除零、溢出、负数开方直接进错误态，不写历史（没有“结果”可记） |
+| 点击某条记录 | 结果显示到主显示区，原算式回到副显示区，之后可继续运算 |
+| 错误态下点击 | 可以正常回填，等于用一条旧结果把错误态解除 |
+| `C` / `MC` 的影响 | 历史不随 `C` 清除；只受面板里的“清除”按钮控制 |
+
+面板本身是 `Qt::Popup` 浮层：点面板外部自动关闭、`Esc` 关闭，位置由 `positionHistoryPanel()`
+按 `btnMList` 的实际坐标算出（贴住显示区底沿，宽度跟随窗口），窗口缩放不会跑偏。
+
 ## 5. 键盘对应表
 
 | 键盘 | 功能 | 键盘 | 功能 |
@@ -109,6 +141,7 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 | `q` | x² | `@` | √x |
 | `Ctrl+M` | MS | `Ctrl+P` / `Ctrl+Q` | M+ / M− |
 | `Ctrl+R` | MR | `Ctrl+L` | MC |
+| `Ctrl+H` | 打开 / 关闭计算历史 | `Esc`（面板内） | 关闭历史面板 |
 
 ## 6. 边界情况处理
 
@@ -129,6 +162,12 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 | 16 位整数结果 | 完整显示，不转成科学计数法 | `largeIntegerResult` |
 | 重复按 `=` | 重复上一次运算 | `repeatedEqualsRepeatsLastOperation` |
 | 鼠标 / 键盘混用 | 两侧走同一入口，结果一致 | `keyboardAndMouseShareSameEngine` |
+| 历史记录内容 | 每次 `=` 记一条算式 + 结果 | `historyRecordsCompletedCalculations` / `repeatedEqualsAddsHistory` |
+| 历史条数上限 | 只保留最近 50 条 | `historyKeepsOnlyRecentRecords` |
+| 点击历史回填 | 结果回到显示区，原算式回到副显示区 | `recallHistoryRecordRestoresResult` |
+| 错误态点历史 | 自动恢复为正常状态 | `recallAfterErrorRecovers` |
+| 失败的计算 | 不写入历史 | `failedCalculationIsNotRecorded` |
+| `C` 与历史 | 历史保留，只清当前计算 | `historySurvivesClearAll` |
 
 ## 7. 测试
 
@@ -137,7 +176,7 @@ cmake --build build --target tst_calculatorengine
 ./build/tst_calculatorengine
 ```
 
-当前结果：**30 passed, 0 failed**。
+当前结果：**39 passed, 0 failed**。
 
 测试只依赖 `calculatorengine.cpp` / `keymapping.cpp`，不启动界面，
 因此可以在 CI 里无界面运行。界面部分用手动清单验证：
@@ -147,6 +186,8 @@ cmake --build build --target tst_calculatorengine
 3. `8 ÷ 0 =` 显示“除数不能为零”，此时按数字无反应，按 `C` 恢复
 4. `1 2 + 5 CE 3 =` 得 `15`；`1 2 3 ⌫ ⌫` 显示 `1`
 5. 窗口拉宽拉窄，数字自动缩放且不越界
+6. 算两道题后点 `M▾`，面板里应出现两条算式；点较早那条，显示区变成它的结果，副显示区显示当时的算式
+7. `8 ÷ 0 =` 后点 `M▾` 里任一条记录，应从“除数不能为零”恢复到正常状态
 
 ## 8. 版本管理（Git / GitHub）
 
@@ -154,6 +195,8 @@ cmake --build build --target tst_calculatorengine
 
 ```bash
 git log --oneline
+# feat: 点击 M 键查看计算历史（M▾ 面板）
+# feat(ui): 按截图样式实现计算器界面与鼠标/键盘统一分发
 # fix: 修正大整数显示为科学计数法与 CE 后副显示区残留
 # feat: 实现计算核心 CalculatorEngine 与键盘映射
 # chore: 初始化 Qt 计算器工程骨架
@@ -172,7 +215,8 @@ git push -u origin main
 
 ## 9. 已知限制
 
-- `M▾`（内存历史列表）按截图保留了按钮但未实现，置灰状态
-- 表达式栏显示的是“当前这一步”的算式，不做完整历史栈
+- 历史记录保存在内存中，关闭程序后不保留（需要持久化可以接 `QSettings`）
+- 历史面板只能整体“清除”，不支持逐条删除；最多保留最近 50 条
+- 副显示区只显示“当前这一步”的算式，完整历史在 `M▾` 面板里
 - 不支持运算优先级（与 Windows 标准计算器一致，按输入顺序从左到右计算）
 - 不处理千分位分隔符

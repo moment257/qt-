@@ -15,6 +15,7 @@ QT_END_NAMESPACE
 class QPushButton;
 class QKeyEvent;
 class QResizeEvent;
+class HistoryPanel;
 
 /*!
  * \brief 计算器主窗口。
@@ -53,9 +54,16 @@ private:
     void flashButton(CalculatorKey key);
     QPushButton *buttonForKey(CalculatorKey key) const;
 
+    // ---- 计算历史面板（M 键） ----
+    void toggleHistoryPanel();
+    void updateHistoryPanel();
+    void positionHistoryPanel();
+    void recallHistoryRecord(int index);
+
     Ui::Calculate *ui;
     CalculatorEngine m_engine;
     QVector<ButtonBinding> m_buttonBindings;
+    HistoryPanel *m_historyPanel = nullptr;   ///< 首次点击 M 键时创建，之后复用
 };
 
 #endif // CALCULATE_H

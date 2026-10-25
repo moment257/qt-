@@ -1,6 +1,7 @@
 #include "calculate.h"
 #include "ui_calculate.h"
 
+#include "historypanel.h"
 #include "keymapping.h"
 
 #include <QFontMetrics>
@@ -191,6 +192,11 @@ Calculate::Calculate(QWidget *parent)
     ui->btnBackspace->setIconSize(QSize(22, 22));
 
     setupButtonBindings();
+
+    // M▾ 不改变计算状态，因此不进按键映射表，单独连接成“打开历史面板”
+    ui->btnMList->setFocusPolicy(Qt::NoFocus);
+    connect(ui->btnMList, &QPushButton::clicked, this, &Calculate::toggleHistoryPanel);
+
     refreshDisplay();
 }
 
@@ -257,6 +263,13 @@ void Calculate::pressCalculatorKey(CalculatorKey key, bool visualFeedback)
 
 void Calculate::keyPressEvent(QKeyEvent *event)
 {
+    // Ctrl+H 与点击 M▾ 等价，键盘用户也能打开历史面板
+    if (event->key() == Qt::Key_H && event->modifiers().testFlag(Qt::ControlModifier)) {
+        toggleHistoryPanel();
+        event->accept();
+        return;
+    }
+
     CalculatorKey key = CalculatorKey::ClearAll;
     if (KeyMapping::fromKeyboard(event->key(), event->modifiers(), &key)) {
         // 键盘输入时让对应按钮闪一下，用户得到的反馈与鼠标点击一致
@@ -322,4 +335,68 @@ QPushButton *Calculate::buttonForKey(CalculatorKey key) const
             return binding.button;
     }
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// 计算历史面板（M 键）
+// ---------------------------------------------------------------------------
+
+void Calculate::toggleHistoryPanel()
+{
+    if (m_historyPanel && m_historyPanel->isVisible()) {
+        m_historyPanel->hide();
+        return;
+    }
+
+    if (!m_historyPanel) {
+        m_historyPanel = new HistoryPanel(this);
+
+        // 点击内存行 = 按下 MR，走的仍是引擎里同一个处理函数
+        connect(m_historyPanel, &HistoryPanel::memoryActivated, this,
+                [this]() { pressCalculatorKey(CalculatorKey::MemoryRecall, true); });
+        connect(m_historyPanel, &HistoryPanel::recordActivated, this,
+                &Calculate::recallHistoryRecord);
+        connect(m_historyPanel, &HistoryPanel::clearHistoryRequested, this, [this]() {
+            m_engine.clearHistory();
+            updateHistoryPanel();
+        });
+    }
+
+    updateHistoryPanel();
+    positionHistoryPanel();
+    m_historyPanel->show();
+    m_historyPanel->raise();
+}
+
+void Calculate::updateHistoryPanel()
+{
+    if (!m_historyPanel)
+        return;
+
+    m_historyPanel->setContent(m_engine.hasMemory(), m_engine.memoryText(), m_engine.history());
+}
+
+void Calculate::positionHistoryPanel()
+{
+    if (!m_historyPanel)
+        return;
+
+    // 面板贴在显示区上，下沿紧挨内存键行（btnMList 所在的那一行）
+    const QRect windowRect(mapToGlobal(QPoint(0, 0)), size());
+    const QRect anchorRect(ui->btnMList->mapToGlobal(QPoint(0, 0)), ui->btnMList->size());
+
+    constexpr int kMargin = 8;
+    constexpr int kMinPanelHeight = 160;
+
+    const int top = windowRect.top() + kMargin;
+    const int height = qMax(kMinPanelHeight, anchorRect.top() - 6 - top);
+    const int width = qMax(240, windowRect.width() - kMargin * 2);
+
+    m_historyPanel->setGeometry(windowRect.left() + kMargin, top, width, height);
+}
+
+void Calculate::recallHistoryRecord(int index)
+{
+    m_engine.recallHistory(index);
+    refreshDisplay();
 }

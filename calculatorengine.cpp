@@ -96,7 +96,31 @@ void CalculatorEngine::clearAll()
     m_lastOperand = 0.0;
     m_hasLastOperation = false;
 
-    // 内存（MC/M+/M−/MS）不随 C 键清除，这与常见计算器的习惯一致
+    // 内存（MC/M+/M−/MS）与计算历史都不随 C 键清除，这与常见计算器的习惯一致
+}
+
+void CalculatorEngine::clearHistory()
+{
+    m_history.clear();
+}
+
+void CalculatorEngine::recallHistory(int index)
+{
+    if (index < 0 || index >= m_history.size())
+        return;
+
+    const CalculationRecord &record = m_history.at(index);
+
+    // 回填结果，并把原来的算式放回副显示区，用户能看出这个数是怎么来的
+    m_display = record.result;
+    m_expression = record.expression;
+    m_state = State::Result;
+
+    // 回填后不沿用旧运算上下文：接着按数字是全新计算，按运算符则在该结果上继续
+    m_hasPendingOperator = false;
+    m_pendingOperator = CalculatorKey::Equals;
+    m_hasLastOperation = false;
+    m_waitingOperand = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +244,8 @@ void CalculatorEngine::applyEquals()
         m_pendingOperator = CalculatorKey::Equals;
         m_hasPendingOperator = false;
 
+        appendHistory(m_expression, formatNumber(result));
+
         showValue(result);          // 状态置为 Result
         m_waitingOperand = true;    // 之后再按数字，将开始一次新的计算
         return;
@@ -242,6 +268,7 @@ void CalculatorEngine::applyEquals()
 
         m_expression = formatNumber(lhs) + QLatin1Char(' ') + operatorSymbol(m_lastOperator)
                        + QLatin1Char(' ') + formatNumber(m_lastOperand) + QLatin1String(" =");
+        appendHistory(m_expression, formatNumber(result));
         showValue(result);
         m_waitingOperand = true;
         return;
@@ -425,6 +452,18 @@ void CalculatorEngine::showError(const QString &message)
     m_pendingOperator = CalculatorKey::Equals;
     m_hasLastOperation = false;
     m_waitingOperand = false;
+}
+
+void CalculatorEngine::appendHistory(const QString &expression, const QString &result)
+{
+    if (expression.isEmpty())
+        return;
+
+    m_history.append(CalculationRecord{expression, result});
+
+    // 只保留最近的若干条，避免历史无限增长
+    if (m_history.size() > kMaxHistoryRecords)
+        m_history.remove(0, m_history.size() - kMaxHistoryRecords);
 }
 
 CalculatorEngine::CalcStatus CalculatorEngine::calculate(double lhs, double rhs, CalculatorKey op,

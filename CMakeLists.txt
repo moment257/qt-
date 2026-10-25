@@ -21,6 +21,8 @@ set(PROJECT_SOURCES
         calculate.ui
         calculatorengine.cpp
         calculatorengine.h
+        historypanel.cpp
+        historypanel.h
         keymapping.cpp
         keymapping.h
 )
