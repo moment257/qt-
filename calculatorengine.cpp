@@ -56,6 +56,7 @@ void CalculatorEngine::pressKey(CalculatorKey key)
     case CalculatorKey::Subtract:
     case CalculatorKey::Multiply:
     case CalculatorKey::Divide:
+    case CalculatorKey::Power:
         applyOperator(key);
         break;
     case CalculatorKey::Equals:
@@ -219,16 +220,8 @@ void CalculatorEngine::applyOperator(CalculatorKey op)
     if (m_hasPendingOperator) {
         // 连续运算，例如 "2 + 3 +"：先把前一个运算符算掉，结果作为新的左操作数
         double result = 0.0;
-        switch (calculate(m_accumulator, currentValue(), m_pendingOperator, &result)) {
-        case CalcStatus::Ok:
-            break;
-        case CalcStatus::DivideByZero:
-            showError(QStringLiteral("除数不能为零"));
+        if (!calculateOrReport(m_accumulator, currentValue(), m_pendingOperator, &result))
             return;
-        case CalcStatus::Overflow:
-            showError(QStringLiteral("数值超出范围"));
-            return;
-        }
         m_accumulator = result;
         showValue(result);
     } else {
@@ -252,16 +245,8 @@ void CalculatorEngine::applyEquals()
         const double lhs = m_accumulator;
         const double rhs = currentValue();
         double result = 0.0;
-        switch (calculate(lhs, rhs, m_pendingOperator, &result)) {
-        case CalcStatus::Ok:
-            break;
-        case CalcStatus::DivideByZero:
-            showError(QStringLiteral("除数不能为零"));
+        if (!calculateOrReport(lhs, rhs, m_pendingOperator, &result))
             return;
-        case CalcStatus::Overflow:
-            showError(QStringLiteral("数值超出范围"));
-            return;
-        }
 
         m_expression = formatNumber(lhs) + QLatin1Char(' ') + operatorSymbol(m_pendingOperator)
                        + QLatin1Char(' ') + formatNumber(rhs) + QLatin1String(" =");
@@ -284,16 +269,8 @@ void CalculatorEngine::applyEquals()
         // 没有待执行运算却再次按 "="：重复执行上一次的运算
         const double lhs = currentValue();
         double result = 0.0;
-        switch (calculate(lhs, m_lastOperand, m_lastOperator, &result)) {
-        case CalcStatus::Ok:
-            break;
-        case CalcStatus::DivideByZero:
-            showError(QStringLiteral("除数不能为零"));
+        if (!calculateOrReport(lhs, m_lastOperand, m_lastOperator, &result))
             return;
-        case CalcStatus::Overflow:
-            showError(QStringLiteral("数值超出范围"));
-            return;
-        }
 
         m_expression = formatNumber(lhs) + QLatin1Char(' ') + operatorSymbol(m_lastOperator)
                        + QLatin1Char(' ') + formatNumber(m_lastOperand) + QLatin1String(" =");
@@ -626,6 +603,13 @@ CalculatorEngine::CalcStatus CalculatorEngine::calculate(double lhs, double rhs,
             return CalcStatus::DivideByZero;
         value = lhs / rhs;
         break;
+    case CalculatorKey::Power:
+        value = std::pow(lhs, rhs);
+        // 负数开分数次方（如 (-8) ^ 0.5）在实数范围内没有定义，std::pow 会返回 NaN。
+        // 单独区分出来，因为这不是“数值太大”，提示“无效输入”更准确
+        if (std::isnan(value))
+            return CalcStatus::DomainError;
+        break;
     default:
         return CalcStatus::Overflow;
     }
@@ -635,6 +619,24 @@ CalculatorEngine::CalcStatus CalculatorEngine::calculate(double lhs, double rhs,
 
     *result = value;
     return CalcStatus::Ok;
+}
+
+bool CalculatorEngine::calculateOrReport(double lhs, double rhs, CalculatorKey op, double *result)
+{
+    switch (calculate(lhs, rhs, op, result)) {
+    case CalcStatus::Ok:
+        return true;
+    case CalcStatus::DivideByZero:
+        showError(QStringLiteral("除数不能为零"));
+        return false;
+    case CalcStatus::DomainError:
+        showError(QStringLiteral("无效输入"));
+        return false;
+    case CalcStatus::Overflow:
+        showError(QStringLiteral("数值超出范围"));
+        return false;
+    }
+    return false;
 }
 
 bool CalculatorEngine::isDigitKey(CalculatorKey key)
@@ -652,7 +654,8 @@ int CalculatorEngine::digitOf(CalculatorKey key)
 bool CalculatorEngine::isBinaryOperator(CalculatorKey key)
 {
     return key == CalculatorKey::Add || key == CalculatorKey::Subtract
-           || key == CalculatorKey::Multiply || key == CalculatorKey::Divide;
+           || key == CalculatorKey::Multiply || key == CalculatorKey::Divide
+           || key == CalculatorKey::Power;
 }
 
 QString CalculatorEngine::operatorSymbol(CalculatorKey key)
@@ -666,6 +669,8 @@ QString CalculatorEngine::operatorSymbol(CalculatorKey key)
         return QStringLiteral("×");
     case CalculatorKey::Divide:
         return QStringLiteral("÷");
+    case CalculatorKey::Power:
+        return QStringLiteral("^");
     default:
         return QString();
     }

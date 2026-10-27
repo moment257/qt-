@@ -279,7 +279,7 @@
       <widget class="QPushButton" name="btnSin">
        <property name="minimumSize">
         <size>
-         <width>60</width>
+         <width>56</width>
          <height>40</height>
         </size>
        </property>
@@ -301,7 +301,7 @@
       <widget class="QPushButton" name="btnCos">
        <property name="minimumSize">
         <size>
-         <width>60</width>
+         <width>56</width>
          <height>40</height>
         </size>
        </property>
@@ -323,7 +323,7 @@
       <widget class="QPushButton" name="btnTan">
        <property name="minimumSize">
         <size>
-         <width>60</width>
+         <width>56</width>
          <height>40</height>
         </size>
        </property>
@@ -345,7 +345,7 @@
       <widget class="QPushButton" name="btnDegree">
        <property name="minimumSize">
         <size>
-         <width>60</width>
+         <width>56</width>
          <height>40</height>
         </size>
        </property>
@@ -364,10 +364,32 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnPower">
+       <property name="minimumSize">
+        <size>
+         <width>56</width>
+         <height>40</height>
+        </size>
+       </property>
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="toolTip">
+        <string>幂运算 xʸ：输入底数后按此键，再输入指数，按等号求值（快捷键 ^）</string>
+       </property>
+       <property name="text">
+        <string>xʸ</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnAngleMode">
        <property name="minimumSize">
         <size>
-         <width>60</width>
+         <width>56</width>
          <height>40</height>
         </size>
        </property>

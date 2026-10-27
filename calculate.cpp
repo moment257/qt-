@@ -110,6 +110,7 @@ QPushButton#btnSquareRoot,
 QPushButton#btnSin,
 QPushButton#btnCos,
 QPushButton#btnTan,
+QPushButton#btnPower,
 QPushButton#btnNegate,
 QPushButton#btnDivide,
 QPushButton#btnMultiply,
@@ -129,12 +130,18 @@ QPushButton#btnSquareRoot:hover,
 QPushButton#btnSin:hover,
 QPushButton#btnCos:hover,
 QPushButton#btnTan:hover,
+QPushButton#btnPower:hover,
 QPushButton#btnNegate:hover,
 QPushButton#btnDivide:hover,
 QPushButton#btnMultiply:hover,
 QPushButton#btnSubtract:hover,
 QPushButton#btnAdd:hover {
     background-color: #3F3F3F;
+}
+
+/* 幂运算键：指数是上标字形，字号比其它功能键大一号才看得清 */
+QPushButton#btnPower {
+    font-size: 16px;
 }
 
 /* 角度符号键：按下后当前数字被标成角度，按钮同步变琥珀色，
@@ -285,6 +292,7 @@ void Calculate::setupButtonBindings()
         {ui->btnCos, CalculatorKey::Cosine},
         {ui->btnTan, CalculatorKey::Tangent},
         {ui->btnDegree, CalculatorKey::DegreeMark},
+        {ui->btnPower, CalculatorKey::Power},
         {ui->btnAngleMode, CalculatorKey::AngleMode},
         {ui->btnBackspace, CalculatorKey::Backspace},
         {ui->btnClearEntry, CalculatorKey::ClearEntry},

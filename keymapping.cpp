@@ -54,6 +54,9 @@ bool fromKeyboard(int qtKey, Qt::KeyboardModifiers modifiers, CalculatorKey *out
     case Qt::Key_Slash:
         *outKey = CalculatorKey::Divide;
         return true;
+    case Qt::Key_AsciiCircum:   // ^ 与按钮上的 xʸ 等价
+        *outKey = CalculatorKey::Power;
+        return true;
     case Qt::Key_Equal:
     case Qt::Key_Return:
     case Qt::Key_Enter:

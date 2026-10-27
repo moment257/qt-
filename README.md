@@ -5,11 +5,15 @@
 
 ![界面截图](docs/screenshot.png)
 
-界面从上往下依次是：显示区 → 内存键行 → 三角函数行 → 4×6 键盘。
-三角函数行是 `sin / cos / tan / ° / DEG` 五个按钮：`DEG / RAD` 切换全局单位（切到 RAD 会变成琥珀色），
-`°` 则把当前数字单独标成角度（生效时按钮描边变琥珀色）：
+界面从上往下依次是：显示区 → 内存键行 → 函数行 → 4×6 键盘。
+函数行是 `sin / cos / tan / ° / xʸ / DEG` 六个按钮：`DEG / RAD` 切换全局单位（切到 RAD 会变成琥珀色），
+`°` 把当前数字单独标成角度（生效时按钮描边变琥珀色），`xʸ` 是幂运算：
 
-![三角函数行](docs/screenshot-trig.png)
+![函数行](docs/screenshot-trig.png)
+
+幂运算 `2 ^ 10 = 1024`，副显示区会回显算式：
+
+![幂运算](docs/screenshot-power.png)
 
 ---
 
@@ -19,6 +23,7 @@
 - **小数输入**：以 `.` 开头自动补 `0`，重复小数点被忽略，最多 16 位有效数字
 - **退格 / 清除**：`⌫` 逐位退格、`CE` 只清当前操作数、`C` 全清
 - **一元运算**：`1/x`、`x²`、`√x`、`%`、`±`
+- **幂运算**：`xʸ`，输入底数 → 按 `xʸ` → 输入指数 → `=`（支持负指数、小数指数、连续运算）
 - **三角函数**：`sin / cos / tan`，支持角度制（DEG）与弧度制（RAD）切换，按钮颜色随模式变化
 - **角度符号 °**：给当前数字打上角度标记（`30° sin` 得 0.5），优先级高于全局 DEG/RAD 模式
 - **内存**：`MC / MR / M+ / M− / MS`，存储状态由显示区左上角的 `M` 指示
@@ -59,12 +64,13 @@ cmake --build build
 ├── historypanel.h/.cpp      点 M▾ 弹出的“计算历史”浮层（只负责展示与点击，不存数据）
 ├── keymapping.h/.cpp        键盘键值 → 计算器按键的映射（可独立测试）
 ├── tests/
-│   └── tst_calculatorengine.cpp   Qt Test 单元测试（52 个用例）
+│   └── tst_calculatorengine.cpp   Qt Test 单元测试（57 个用例）
 └── docs/
     ├── 界面搭建步骤.md       在 UI 编辑器里还原界面的详细步骤
     ├── screenshot.png        界面截图（输入中）
     ├── screenshot-result.png 界面截图（结果）
     ├── screenshot-trig.png   界面截图（三角函数，角度制）
+    ├── screenshot-power.png  界面截图（幂运算 2^10 = 1024）
     └── screenshot-history.png 界面截图（M 键历史面板）
 ```
 
@@ -158,6 +164,22 @@ const double radians = useDegree ? value * kPi / 180.0 : value;
 `DEG / RAD` 按钮切换的是 `m_angleMode`，它和内存值一样属于“设置”，`C` 键不会重置；
 切换本身也不改当前显示，切完再按 `sin` 才按新单位算。
 
+**2）浮点噪声**。这是三角函数最容易出丑的地方，两处都要处理：
+
+| 现象 | 不处理的后果 | 处理方式 |
+| --- | --- | --- |
+| `sin(30°)` = `0.4999999999999999` | 显示一长串 9 | 三角函数结果用 `kTrigPrecision = 12` 位有效数字格式化 |
+| `sin(180°)` = `1.22e-16` | 显示科学计数法，看起来是错的结果 | 绝对值小于 `1e-12` 一律当作 0 |
+
+`formatNumber()` 因此多了一个 `precision` 参数，普通运算仍是 16 位（保证 16 位整数完整显示），
+只有三角函数传 12 位。
+
+**3）定义域**。`tan(90°)`、`tan(270°)` 没有定义，直接算会得到 `1.6e16` 这种“看起来有结果”的假数值。
+这里用 `|cos(radians)| < 1e-12` 判定后走 `showError("无效输入")`，和负数开方共用同一套错误态。
+
+界面上的模式提示交给样式表：`btnAngleMode` 根据动态属性 `radian` 切换样式（DEG 深底绿字 / RAD 琥珀底深字），
+切换时 `unpolish/polish` 一次让新规则生效，避免每次刷新都重设样式。
+
 ### 4.6 角度符号 °
 
 全局的 `DEG / RAD` 不够用时（比如整页都按弧度算，只有这一个角是 30°），
@@ -179,21 +201,31 @@ const double radians = useDegree ? value * kPi / 180.0 : value;
   避免把左操作数误标成角度
 - 按钮在标记生效时变成琥珀色描边，跟 `RAD` 的高亮风格一致
 
-**2）浮点噪声**。这是三角函数最容易出丑的地方，两处都要处理：
+### 4.7 幂运算 xʸ
 
-| 现象 | 不处理的后果 | 处理方式 |
+`xʸ` 与 `+ − × ÷` 一样是**二元运算符**，走的也是同一条路径：
+输入底数 → 按 `xʸ` → 输入指数 → 按 `=`。
+所以它天然支持连续运算（`2 + 3 ^ 2 =` 得 25）、结果接着算（`4 ^ 0.5 + 1 =` 得 3），也会写入历史。
+
+```cpp
+value = std::pow(lhs, rhs);
+if (std::isnan(value))
+    return CalcStatus::DomainError;   // 实数范围无解，例如 (-8) ^ 0.5
+```
+
+两个和四则运算不一样的错误分支：
+
+| 输入 | 结果 | 处理 |
 | --- | --- | --- |
-| `sin(30°)` = `0.4999999999999999` | 显示一长串 9 | 三角函数结果用 `kTrigPrecision = 12` 位有效数字格式化 |
-| `sin(180°)` = `1.22e-16` | 显示科学计数法，看起来是错的结果 | 绝对值小于 `1e-12` 一律当作 0 |
+| `(-8) ^ 0.5` | 显示“无效输入” | `std::pow` 返回 NaN，单独归为 `DomainError`，比“数值超出范围”更准确 |
+| `99 ^ 999` | 显示“数值超出范围” | 结果为 inf，沿用 `std::isfinite` 判定 |
 
-`formatNumber()` 因此多了一个 `precision` 参数，普通运算仍是 16 位（保证 16 位整数完整显示），
-只有三角函数传 12 位。
+连续按 `xʸ` 时按输入顺序左结合：`2 ^ 3 ^ 2 =` 得 `64`（即 `(2^3)^2`），
+和本计算器不支持运算优先级的设计保持一致。
 
-**3）定义域**。`tan(90°)`、`tan(270°)` 没有定义，直接算会得到 `1.6e16` 这种“看起来有结果”的假数值。
-这里用 `|cos(radians)| < 1e-12` 判定后走 `showError("无效输入")`，和负数开方共用同一套错误态。
-
-界面上的模式提示交给样式表：`btnAngleMode` 根据动态属性 `radian` 切换样式（DEG 深底绿字 / RAD 琥珀底深字），
-切换时 `unpolish/polish` 一次让新规则生效，避免每次刷新都重设样式。
+顺带把三处重复的错误处理收成一个函数 `calculateOrReport()`：
+连续运算、等号、重复等号原本各抄了一遍 `switch (calculate(...))`，
+新增 `DomainError` 分支时就不用改三处了。
 
 ## 5. 键盘对应表
 
@@ -202,6 +234,7 @@ const double radians = useDegree ? value * kPi / 180.0 : value;
 | `0`–`9`（含小键盘） | 数字 | `Enter` / `=` | 等号 |
 | `.` / `,` | 小数点 | `Backspace` | 退格 |
 | `+` `-` `*` `/` | 四则运算 | `Esc` | 清除全部（C） |
+| `^` | xʸ 幂运算 | | |
 | `%` | 百分号 | `Delete` | 清除当前项（CE） |
 | `F9` | ± 取反 | `r` | 1/x |
 | `q` | x² | `@` | √x |
@@ -231,6 +264,11 @@ const double radians = useDegree ? value * kPi / 180.0 : value;
 | 16 位整数结果 | 完整显示，不转成科学计数法 | `largeIntegerResult` |
 | 重复按 `=` | 重复上一次运算 | `repeatedEqualsRepeatsLastOperation` |
 | 鼠标 / 键盘混用 | 两侧走同一入口，结果一致 | `keyboardAndMouseShareSameEngine` |
+| `2 ^ 10 =` | `1024`，副显示区回显 `2 ^ 10 =` | `powerCalculation` |
+| `2 ^ 3 ^ 2 =` | 左结合得 `64`，不是 `512` | `powerIsLeftAssociative` |
+| `2 + 3 ^ 2 =` | 幂可以先算再参与四则运算，得 25 | `powerParticipatesInExpression` |
+| `(-8) ^ 0.5` | 显示“无效输入”（实数范围无解） | `powerDomainError` |
+| `99 ^ 999` | 显示“数值超出范围” | `powerOverflow` |
 | 历史记录内容 | 每次 `=` 记一条算式 + 结果 | `historyRecordsCompletedCalculations` / `repeatedEqualsAddsHistory` |
 | 历史条数上限 | 只保留最近 50 条 | `historyKeepsOnlyRecentRecords` |
 | 点击历史回填 | 结果回到显示区，原算式回到副显示区 | `recallHistoryRecordRestoresResult` |
@@ -256,7 +294,7 @@ cmake --build build --target tst_calculatorengine
 ./build/tst_calculatorengine
 ```
 
-当前结果：**52 passed, 0 failed**。
+当前结果：**57 passed, 0 failed**。
 
 测试只依赖 `calculatorengine.cpp` / `keymapping.cpp`，不启动界面，
 因此可以在 CI 里无界面运行。界面部分用手动清单验证：
@@ -269,6 +307,7 @@ cmake --build build --target tst_calculatorengine
 6. 算两道题后点 `M▾`，面板里应出现两条算式；点较早那条，显示区变成它的结果，副显示区显示当时的算式
 7. `8 ÷ 0 =` 后点 `M▾` 里任一条记录，应从“除数不能为零”恢复到正常状态
 8. 点 `DEG` 切到 `RAD`，输入 `30 sin` 得 `-0.988…`；清空后再输入 `30`、点 `°`、按 `sin`，应得 `0.5`
+9. 输入 `2`、点 `xʸ`、输入 `10`、按 `=`，应得 `1024`，副显示区显示 `2 ^ 10 =`；`8 ±` 后 `^ 0.5 =` 应提示“无效输入”
 
 ## 8. 版本管理（Git / GitHub）
 
@@ -276,6 +315,7 @@ cmake --build build --target tst_calculatorengine
 
 ```bash
 git log --oneline
+# feat: 增加幂运算 xʸ（二元运算符，等号求值）
 # feat: 增加角度符号 °（把当前数字标成角度）
 # feat: 增加三角函数 sin/cos/tan 与角度制切换
 # feat: 点击 M 键查看计算历史（M▾ 面板）
@@ -303,6 +343,7 @@ git push -u origin main
 - 副显示区只显示“当前这一步”的算式，完整历史在 `M▾` 面板里
 - 三角函数只做了 `sin / cos / tan`，没有反三角（asin/acos/atan）和双曲函数
 - 角度符号 `°` 只标记“当前这一个操作数”，不会把整个算式里的数字都解释成角度
+- 幂运算按输入顺序左结合（`2 ^ 3 ^ 2` = 64），不做右结合与优先级
 - 三角函数结果固定按 12 位有效数字显示，极小的值（|x| < 1e-12）会被当作 0
 - 不支持运算优先级（与 Windows 标准计算器一致，按输入顺序从左到右计算）
 - 不处理千分位分隔符

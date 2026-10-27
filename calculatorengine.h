@@ -30,6 +30,7 @@ enum class CalculatorKey {
     Subtract,       ///< −
     Multiply,       ///< ×
     Divide,         ///< ÷
+    Power,          ///< xʸ 幂运算（二元）
     Equals,         ///< =
     Percent,        ///< %
     Negate,         ///< ±
@@ -154,6 +155,7 @@ private:
     enum class CalcStatus {
         Ok,
         DivideByZero,
+        DomainError, ///< 数学上没有定义，例如 (-8) ^ 0.5
         Overflow
     };
 
@@ -179,6 +181,14 @@ private:
     void showValue(double value, int precision = kDefaultPrecision); ///< 显示数值并置为 Result
     void showError(const QString &message);                ///< 进入错误状态
     CalcStatus calculate(double lhs, double rhs, CalculatorKey op, double *result) const;
+    /*!
+     * \brief 执行二元运算，失败时直接把错误显示到显示区。
+     * \return true 表示计算成功、result 有效；false 表示已进入错误状态。
+     *
+     * 连续运算、等号、重复等号三处都要做同一套错误处理，
+     * 集中在这里可以避免把同一段 switch 抄三遍。
+     */
+    bool calculateOrReport(double lhs, double rhs, CalculatorKey op, double *result);
     void appendHistory(const QString &expression, const QString &result); ///< 追加一条计算记录
 
     static bool isDigitKey(CalculatorKey key);
