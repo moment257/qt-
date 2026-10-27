@@ -83,6 +83,19 @@ bool fromKeyboard(int qtKey, Qt::KeyboardModifiers modifiers, CalculatorKey *out
     case Qt::Key_At:
         *outKey = CalculatorKey::SquareRoot;
         return true;
+    // ---- 三角函数：取英文首字母，D 用来切换角度 / 弧度 ----
+    case Qt::Key_S:
+        *outKey = CalculatorKey::Sine;
+        return true;
+    case Qt::Key_C:
+        *outKey = CalculatorKey::Cosine;
+        return true;
+    case Qt::Key_T:
+        *outKey = CalculatorKey::Tangent;
+        return true;
+    case Qt::Key_D:
+        *outKey = CalculatorKey::AngleMode;
+        return true;
     default:
         return false;
     }

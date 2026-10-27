@@ -5,6 +5,11 @@
 
 ![界面截图](docs/screenshot.png)
 
+界面从上往下依次是：显示区 → 内存键行 → 三角函数行 → 4×6 键盘。
+角度制与弧度制用同一行的 `DEG / RAD` 按钮切换，切到 RAD 时按钮会变成琥珀色：
+
+![三角函数行](docs/screenshot-trig.png)
+
 ---
 
 ## 1. 功能
@@ -13,6 +18,7 @@
 - **小数输入**：以 `.` 开头自动补 `0`，重复小数点被忽略，最多 16 位有效数字
 - **退格 / 清除**：`⌫` 逐位退格、`CE` 只清当前操作数、`C` 全清
 - **一元运算**：`1/x`、`x²`、`√x`、`%`、`±`
+- **三角函数**：`sin / cos / tan`，支持角度制（DEG）与弧度制（RAD）切换，按钮颜色随模式变化
 - **内存**：`MC / MR / M+ / M− / MS`，存储状态由显示区左上角的 `M` 指示
 - **计算历史**：点 `M▾`（或 `Ctrl+H`）弹出历史面板，能看到之前算过的式子，点任意一条可回填结果
 - **键盘操作**：与鼠标点击完全等价，按下时对应按钮会闪一下作为反馈
@@ -51,11 +57,13 @@ cmake --build build
 ├── historypanel.h/.cpp      点 M▾ 弹出的“计算历史”浮层（只负责展示与点击，不存数据）
 ├── keymapping.h/.cpp        键盘键值 → 计算器按键的映射（可独立测试）
 ├── tests/
-│   └── tst_calculatorengine.cpp   Qt Test 单元测试（39 个用例）
+│   └── tst_calculatorengine.cpp   Qt Test 单元测试（45 个用例）
 └── docs/
     ├── 界面搭建步骤.md       在 UI 编辑器里还原界面的详细步骤
     ├── screenshot.png        界面截图（输入中）
-    └── screenshot-result.png 界面截图（结果）
+    ├── screenshot-result.png 界面截图（结果）
+    ├── screenshot-trig.png   界面截图（三角函数，角度制）
+    └── screenshot-history.png 界面截图（M 键历史面板）
 ```
 
 ## 4. 设计要点
@@ -96,7 +104,7 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 - 一个按键一个枚举值：`CalculatorKey::Digit0 … MemoryStore`
 - 一个按键一个处理函数：`inputDigit()` / `applyOperator()` / `applyEquals()` …
 - 界面按钮与逻辑按键用一张 `m_buttonBindings` 表绑定，新增按键只需加一行，
-  不用为 24 个按钮各写一段 `connect`
+  不用为 28 个按钮各写一段 `connect`
 - 样式集中在一份 QSS，靠 objectName 选择器区分按钮类别，避免逐个按钮设样式
 
 ### 4.4 计算历史（M▾ 面板）
@@ -129,6 +137,39 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 面板本身是 `Qt::Popup` 浮层：点面板外部自动关闭、`Esc` 关闭，位置由 `positionHistoryPanel()`
 按 `btnMList` 的实际坐标算出（贴住显示区底沿，宽度跟随窗口），窗口缩放不会跑偏。
 
+### 4.5 三角函数与角度单位
+
+三个三角函数和 `1/x`、`√x` 一样，属于“对当前操作数做一次一元运算”，所以复用了同一条路径：
+取 `currentValue()` → 算 → `showValue()` → 置 `m_waitingOperand = true`。
+它们因此天然支持参与表达式（`2 + 30 sin =` 得 2.5）。
+
+真正需要额外处理的是三件事：
+
+**1）角度换算**。C 标准库只接受弧度：
+
+```cpp
+const double radians = (m_angleMode == AngleMode::Degree) ? value * kPi / 180.0 : value;
+```
+
+`DEG / RAD` 按钮切换的是 `m_angleMode`，它和内存值一样属于“设置”，`C` 键不会重置；
+切换本身也不改当前显示，切完再按 `sin` 才按新单位算。
+
+**2）浮点噪声**。这是三角函数最容易出丑的地方，两处都要处理：
+
+| 现象 | 不处理的后果 | 处理方式 |
+| --- | --- | --- |
+| `sin(30°)` = `0.4999999999999999` | 显示一长串 9 | 三角函数结果用 `kTrigPrecision = 12` 位有效数字格式化 |
+| `sin(180°)` = `1.22e-16` | 显示科学计数法，看起来是错的结果 | 绝对值小于 `1e-12` 一律当作 0 |
+
+`formatNumber()` 因此多了一个 `precision` 参数，普通运算仍是 16 位（保证 16 位整数完整显示），
+只有三角函数传 12 位。
+
+**3）定义域**。`tan(90°)`、`tan(270°)` 没有定义，直接算会得到 `1.6e16` 这种“看起来有结果”的假数值。
+这里用 `|cos(radians)| < 1e-12` 判定后走 `showError("无效输入")`，和负数开方共用同一套错误态。
+
+界面上的模式提示交给样式表：`btnAngleMode` 根据动态属性 `radian` 切换样式（DEG 深底绿字 / RAD 琥珀底深字），
+切换时 `unpolish/polish` 一次让新规则生效，避免每次刷新都重设样式。
+
 ## 5. 键盘对应表
 
 | 键盘 | 功能 | 键盘 | 功能 |
@@ -139,6 +180,8 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 | `%` | 百分号 | `Delete` | 清除当前项（CE） |
 | `F9` | ± 取反 | `r` | 1/x |
 | `q` | x² | `@` | √x |
+| `S` | sin | `C` | cos |
+| `T` | tan | `D` | 切换 DEG / RAD |
 | `Ctrl+M` | MS | `Ctrl+P` / `Ctrl+Q` | M+ / M− |
 | `Ctrl+R` | MR | `Ctrl+L` | MC |
 | `Ctrl+H` | 打开 / 关闭计算历史 | `Esc`（面板内） | 关闭历史面板 |
@@ -168,6 +211,12 @@ CalculatorEngine（纯逻辑）  ←所有运算与边界处理，不使用任�
 | 错误态点历史 | 自动恢复为正常状态 | `recallAfterErrorRecovers` |
 | 失败的计算 | 不写入历史 | `failedCalculationIsNotRecorded` |
 | `C` 与历史 | 历史保留，只清当前计算 | `historySurvivesClearAll` |
+| `sin 30°` / `cos 60°` | 都显示 `0.5`，不出现 `0.4999999999999999` | `trigInDegreeMode` |
+| `sin 180°` | 显示 `0`，不是 `1.22e-16` | `trigHidesFloatingNoise` |
+| `tan 90°` | 显示“无效输入”，进入错误态 | `tangentUndefinedEntersError` |
+| 角度 / 弧度切换 | 同一输入 `90`，DEG 得 1、RAD 得 0.894 | `trigInRadianMode` |
+| 三角函数参与表达式 | `2 + 30 sin =` 得 2.5 | `trigParticipatesInExpression` |
+| `C` 与角度单位 | 切换后的单位不被 `C` 重置 | `angleModePersistsAcrossClearAll` |
 
 ## 7. 测试
 
@@ -176,7 +225,7 @@ cmake --build build --target tst_calculatorengine
 ./build/tst_calculatorengine
 ```
 
-当前结果：**39 passed, 0 failed**。
+当前结果：**45 passed, 0 failed**。
 
 测试只依赖 `calculatorengine.cpp` / `keymapping.cpp`，不启动界面，
 因此可以在 CI 里无界面运行。界面部分用手动清单验证：
@@ -195,6 +244,7 @@ cmake --build build --target tst_calculatorengine
 
 ```bash
 git log --oneline
+# feat: 增加三角函数 sin/cos/tan 与角度制切换
 # feat: 点击 M 键查看计算历史（M▾ 面板）
 # feat(ui): 按截图样式实现计算器界面与鼠标/键盘统一分发
 # fix: 修正大整数显示为科学计数法与 CE 后副显示区残留
@@ -218,5 +268,7 @@ git push -u origin main
 - 历史记录保存在内存中，关闭程序后不保留（需要持久化可以接 `QSettings`）
 - 历史面板只能整体“清除”，不支持逐条删除；最多保留最近 50 条
 - 副显示区只显示“当前这一步”的算式，完整历史在 `M▾` 面板里
+- 三角函数只做了 `sin / cos / tan`，没有反三角（asin/acos/atan）和双曲函数
+- 三角函数结果固定按 12 位有效数字显示，极小的值（|x| < 1e-12）会被当作 0
 - 不支持运算优先级（与 Windows 标准计算器一致，按输入顺序从左到右计算）
 - 不处理千分位分隔符

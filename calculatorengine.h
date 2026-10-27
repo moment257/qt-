@@ -37,6 +37,11 @@ enum class CalculatorKey {
     Square,         ///< x²
     SquareRoot,     ///< √x
 
+    Sine,           ///< sin
+    Cosine,         ///< cos
+    Tangent,        ///< tan
+    AngleMode,      ///< 切换角度制 / 弧度制（只改模式，不参与运算）
+
     Backspace,      ///< ⌫ 退格
     ClearEntry,     ///< CE 清除当前操作数
     ClearAll,       ///< C  清除全部
@@ -75,6 +80,18 @@ public:
 
     /// 历史记录条数上限，避免长时间使用后无限增长
     static constexpr int kMaxHistoryRecords = 50;
+
+    /// 普通运算的显示精度（16 位，能完整显示 16 位整数）
+    static constexpr int kDefaultPrecision = 16;
+
+    /// 三角函数的显示精度：12 位足以吃掉 sin(30°)=0.4999999999999999 这类浮点尾巴
+    static constexpr int kTrigPrecision = 12;
+
+    /// 三角函数的输入角度单位
+    enum class AngleMode {
+        Degree,  ///< 角度制（默认，30 表示 30°）
+        Radian   ///< 弧度制
+    };
 
     CalculatorEngine();
 
@@ -115,6 +132,12 @@ public:
     /// 是否处于错误状态（如除数为 0）
     bool isError() const { return m_state == State::Error; }
 
+    /// 当前三角函数的输入单位
+    AngleMode angleMode() const { return m_angleMode; }
+
+    /// 角度单位按钮的显示文本：DEG / RAD
+    QString angleModeText() const;
+
 private:
     /// 输入阶段，决定了同一个按键在不同时刻应该产生什么行为
     enum class State {
@@ -136,6 +159,8 @@ private:
     void applyOperator(CalculatorKey op);
     void applyEquals();
     void applyUnary(CalculatorKey op);
+    void applyTrig(CalculatorKey op);
+    void toggleAngleMode();
     void applyPercent();
     void applyNegate();
     void applyBackspace();
@@ -145,7 +170,7 @@ private:
     // ---- 内部工具 ----
     void beginNewEntry();                                   ///< 开始输入新的操作数
     double currentValue() const;                            ///< 把显示文本解析成数值
-    void showValue(double value);                           ///< 显示数值并把状态置为 Result
+    void showValue(double value, int precision = kDefaultPrecision); ///< 显示数值并置为 Result
     void showError(const QString &message);                ///< 进入错误状态
     CalcStatus calculate(double lhs, double rhs, CalculatorKey op, double *result) const;
     void appendHistory(const QString &expression, const QString &result); ///< 追加一条计算记录
@@ -154,7 +179,7 @@ private:
     static int digitOf(CalculatorKey key);
     static bool isBinaryOperator(CalculatorKey key);
     static QString operatorSymbol(CalculatorKey key);
-    static QString formatNumber(double value);
+    static QString formatNumber(double value, int precision = kDefaultPrecision);
     static int countDigits(const QString &text);
 
     // ---- 状态数据 ----
@@ -180,6 +205,9 @@ private:
 
     /// 已完成的计算记录，界面上的 M 键面板按倒序展示
     QVector<CalculationRecord> m_history;
+
+    /// 三角函数的输入单位，默认角度制；与内存一样属于“设置”，C 键不会重置它
+    AngleMode m_angleMode = AngleMode::Degree;
 };
 
 #endif // CALCULATORENGINE_H

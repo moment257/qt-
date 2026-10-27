@@ -12,6 +12,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QStyle>
 #include <QTimer>
 
 namespace {
@@ -106,6 +107,9 @@ QPushButton#btnBackspace,
 QPushButton#btnReciprocal,
 QPushButton#btnSquare,
 QPushButton#btnSquareRoot,
+QPushButton#btnSin,
+QPushButton#btnCos,
+QPushButton#btnTan,
 QPushButton#btnNegate,
 QPushButton#btnDivide,
 QPushButton#btnMultiply,
@@ -122,12 +126,38 @@ QPushButton#btnBackspace:hover,
 QPushButton#btnReciprocal:hover,
 QPushButton#btnSquare:hover,
 QPushButton#btnSquareRoot:hover,
+QPushButton#btnSin:hover,
+QPushButton#btnCos:hover,
+QPushButton#btnTan:hover,
 QPushButton#btnNegate:hover,
 QPushButton#btnDivide:hover,
 QPushButton#btnMultiply:hover,
 QPushButton#btnSubtract:hover,
 QPushButton#btnAdd:hover {
     background-color: #3F3F3F;
+}
+
+/* 角度单位切换键：DEG 是深色底 + 绿字，切到 RAD 后变成琥珀色底 + 深字，
+   一眼就能看出当前用的不是默认单位 */
+QPushButton#btnAngleMode {
+    background-color: #2C2C2C;
+    color: #8FCF9A;
+    font-size: 13px;
+    border: 1px solid #3D3D3D;
+}
+
+QPushButton#btnAngleMode:hover {
+    background-color: #3A3A3A;
+}
+
+QPushButton#btnAngleMode[radian="true"] {
+    background-color: #E8B767;
+    color: #1A1A1A;
+    border: 1px solid #E8B767;
+}
+
+QPushButton#btnAngleMode[radian="true"]:hover {
+    background-color: #F0C27C;
 }
 
 /* 内存键：与截图一致，做成无底色的浅灰小字 */
@@ -232,6 +262,10 @@ void Calculate::setupButtonBindings()
         {ui->btnReciprocal, CalculatorKey::Reciprocal},
         {ui->btnSquare, CalculatorKey::Square},
         {ui->btnSquareRoot, CalculatorKey::SquareRoot},
+        {ui->btnSin, CalculatorKey::Sine},
+        {ui->btnCos, CalculatorKey::Cosine},
+        {ui->btnTan, CalculatorKey::Tangent},
+        {ui->btnAngleMode, CalculatorKey::AngleMode},
         {ui->btnBackspace, CalculatorKey::Backspace},
         {ui->btnClearEntry, CalculatorKey::ClearEntry},
         {ui->btnClear, CalculatorKey::ClearAll},
@@ -292,6 +326,17 @@ void Calculate::refreshDisplay()
     ui->labelDisplay->setText(m_engine.displayText());
     ui->labelExpression->setText(m_engine.expressionText());
     ui->labelMemory->setVisible(m_engine.hasMemory());
+
+    // 角度单位按钮：文字随模式变，颜色由动态属性 radian 决定
+    ui->btnAngleMode->setText(m_engine.angleModeText());
+    const bool radian = m_engine.angleMode() == CalculatorEngine::AngleMode::Radian;
+    if (ui->btnAngleMode->property("radian").toBool() != radian) {
+        ui->btnAngleMode->setProperty("radian", radian);
+        // 动态属性变化后要手动让样式表重新生效
+        ui->btnAngleMode->style()->unpolish(ui->btnAngleMode);
+        ui->btnAngleMode->style()->polish(ui->btnAngleMode);
+    }
+
     adjustDisplayFont();
 }
 

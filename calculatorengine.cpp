@@ -5,6 +5,15 @@
 
 #include <cmath>
 
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+/// 三角函数里“按 0 处理”的阈值，用来吸收 sin(180°) ≈ 1.22e-16 这类浮点噪声
+constexpr double kTrigEpsilon = 1e-12;
+
+} // namespace
+
 // Digit0 ~ Digit9 必须连续，键盘映射依赖这个偏移量
 static_assert(static_cast<int>(CalculatorKey::Digit9) - static_cast<int>(CalculatorKey::Digit0) == 9,
               "CalculatorKey::Digit0 ~ Digit9 必须连续排列");
@@ -59,6 +68,14 @@ void CalculatorEngine::pressKey(CalculatorKey key)
     case CalculatorKey::Square:
     case CalculatorKey::SquareRoot:
         applyUnary(key);
+        break;
+    case CalculatorKey::Sine:
+    case CalculatorKey::Cosine:
+    case CalculatorKey::Tangent:
+        applyTrig(key);
+        break;
+    case CalculatorKey::AngleMode:
+        toggleAngleMode();
         break;
     case CalculatorKey::Backspace:
         applyBackspace();
@@ -319,6 +336,60 @@ void CalculatorEngine::applyUnary(CalculatorKey op)
     m_waitingOperand = true;    // 一元运算结束后，再输入数字应开始新操作数
 }
 
+void CalculatorEngine::applyTrig(CalculatorKey op)
+{
+    const double value = currentValue();
+
+    // 标准库的三角函数只接受弧度，角度制先换算：30° → 30 * π / 180
+    const double radians = (m_angleMode == AngleMode::Degree) ? value * kPi / 180.0 : value;
+
+    double result = 0.0;
+    switch (op) {
+    case CalculatorKey::Sine:
+        result = std::sin(radians);
+        break;
+    case CalculatorKey::Cosine:
+        result = std::cos(radians);
+        break;
+    case CalculatorKey::Tangent:
+        // tan(90°)、tan(270°) 这类点本身没有定义。cos 为 0 时判定为无效输入，
+        // 否则会算出一个 1.6e16 的假数值，看起来像是“有结果”
+        if (std::abs(std::cos(radians)) < kTrigEpsilon) {
+            showError(QStringLiteral("无效输入"));
+            return;
+        }
+        result = std::tan(radians);
+        break;
+    default:
+        return;
+    }
+
+    if (!std::isfinite(result)) {
+        showError(QStringLiteral("数值超出范围"));
+        return;
+    }
+
+    // sin(180°) 的浮点结果是 1.22e-16，不处理会显示成科学计数法，这里按 0 处理
+    if (std::abs(result) < kTrigEpsilon)
+        result = 0.0;
+
+    // 三角函数用 12 位有效数字显示：sin(30°) 的浮点结果是 0.4999999999999999，
+    // 降到 12 位才能显示成 0.5，同时不影响常规精度
+    showValue(result, kTrigPrecision);
+    m_waitingOperand = true;    // 三角运算结束后，再输入数字应开始新操作数
+}
+
+void CalculatorEngine::toggleAngleMode()
+{
+    // 只切换模式，不动当前显示：切完再按 sin 才按新单位计算
+    m_angleMode = (m_angleMode == AngleMode::Degree) ? AngleMode::Radian : AngleMode::Degree;
+}
+
+QString CalculatorEngine::angleModeText() const
+{
+    return m_angleMode == AngleMode::Degree ? QStringLiteral("DEG") : QStringLiteral("RAD");
+}
+
 void CalculatorEngine::applyPercent()
 {
     double value = currentValue();
@@ -436,9 +507,9 @@ double CalculatorEngine::currentValue() const
     return ok ? value : 0.0;    // "0." 之类的未完成输入也能被正确解析
 }
 
-void CalculatorEngine::showValue(double value)
+void CalculatorEngine::showValue(double value, int precision)
 {
-    m_display = formatNumber(value);
+    m_display = formatNumber(value, precision);
     m_state = State::Result;
 }
 
@@ -534,7 +605,7 @@ QString CalculatorEngine::operatorSymbol(CalculatorKey key)
     }
 }
 
-QString CalculatorEngine::formatNumber(double value)
+QString CalculatorEngine::formatNumber(double value, int precision)
 {
     if (std::isnan(value) || std::isinf(value))
         return QStringLiteral("错误");
@@ -544,9 +615,10 @@ QString CalculatorEngine::formatNumber(double value)
         value = 0.0;
 
     // 'g' 格式会自动去掉多余的尾随 0，并在数值过大/过小时切换成科学计数法。
-    // 取 16 位有效数字：既能把 kMaxInputDigits 位整数完整显示出来（不会被提前转成 1e+15），
-    // 又能把 0.1 + 0.2 = 0.30000000000000004 这类误差吸收掉显示为 0.3
-    return QString::number(value, 'g', 16);
+    // 默认取 16 位有效数字：既能把 kMaxInputDigits 位整数完整显示出来（不会被提前转成 1e+15），
+    // 又能把 0.1 + 0.2 = 0.30000000000000004 这类误差吸收掉显示为 0.3。
+    // 三角函数的浮点尾巴更长，调用时传 kTrigPrecision 用更少的位数。
+    return QString::number(value, 'g', precision);
 }
 
 int CalculatorEngine::countDigits(const QString &text)
