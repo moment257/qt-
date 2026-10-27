@@ -96,6 +96,10 @@ bool fromKeyboard(int qtKey, Qt::KeyboardModifiers modifiers, CalculatorKey *out
     case Qt::Key_D:
         *outKey = CalculatorKey::AngleMode;
         return true;
+    // 角度符号取单引号：度分秒的写法里 30° 就常写作 30'，且不与任何计算键冲突
+    case Qt::Key_Apostrophe:
+        *outKey = CalculatorKey::DegreeMark;
+        return true;
     default:
         return false;
     }

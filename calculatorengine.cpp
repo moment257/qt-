@@ -12,6 +12,9 @@ constexpr double kPi = 3.14159265358979323846;
 /// 三角函数里“按 0 处理”的阈值，用来吸收 sin(180°) ≈ 1.22e-16 这类浮点噪声
 constexpr double kTrigEpsilon = 1e-12;
 
+/// 角度符号 °，作为“这个数字是角度”的后缀贴在显示区末尾
+const QChar kDegreeSign(0x00B0);
+
 } // namespace
 
 // Digit0 ~ Digit9 必须连续，键盘映射依赖这个偏移量
@@ -77,6 +80,9 @@ void CalculatorEngine::pressKey(CalculatorKey key)
     case CalculatorKey::AngleMode:
         toggleAngleMode();
         break;
+    case CalculatorKey::DegreeMark:
+        applyDegreeMark();
+        break;
     case CalculatorKey::Backspace:
         applyBackspace();
         break;
@@ -113,6 +119,8 @@ void CalculatorEngine::clearAll()
     m_lastOperand = 0.0;
     m_hasLastOperation = false;
 
+    m_degreeMarked = false;
+
     // 内存（MC/M+/M−/MS）与计算历史都不随 C 键清除，这与常见计算器的习惯一致
 }
 
@@ -132,6 +140,7 @@ void CalculatorEngine::recallHistory(int index)
     m_display = record.result;
     m_expression = record.expression;
     m_state = State::Result;
+    m_degreeMarked = false;
 
     // 回填后不沿用旧运算上下文：接着按数字是全新计算，按运算符则在该结果上继续
     m_hasPendingOperator = false;
@@ -232,6 +241,9 @@ void CalculatorEngine::applyOperator(CalculatorKey op)
     m_hasPendingOperator = true;
     m_waitingOperand = true;    // 下一个数字开始新的操作数
     m_expression = formatNumber(m_accumulator) + QLatin1Char(' ') + operatorSymbol(op);
+
+    // ° 只对紧随其后的三角函数有效，进入四则运算后这个后缀就没有意义了
+    clearDegreeMark();
 }
 
 void CalculatorEngine::applyEquals()
@@ -340,8 +352,11 @@ void CalculatorEngine::applyTrig(CalculatorKey op)
 {
     const double value = currentValue();
 
-    // 标准库的三角函数只接受弧度，角度制先换算：30° → 30 * π / 180
-    const double radians = (m_angleMode == AngleMode::Degree) ? value * kPi / 180.0 : value;
+    // 标准库的三角函数只接受弧度，角度制先换算：30° → 30 * π / 180。
+    // 数字上带了 ° 标记时一定按角度制算，不受当前 DEG/RAD 模式影响，
+    // 这样在弧度模式下也能直接写 "30° sin"。
+    const bool useDegree = m_degreeMarked || m_angleMode == AngleMode::Degree;
+    const double radians = useDegree ? value * kPi / 180.0 : value;
 
     double result = 0.0;
     switch (op) {
@@ -377,6 +392,26 @@ void CalculatorEngine::applyTrig(CalculatorKey op)
     // 降到 12 位才能显示成 0.5，同时不影响常规精度
     showValue(result, kTrigPrecision);
     m_waitingOperand = true;    // 三角运算结束后，再输入数字应开始新操作数
+}
+
+void CalculatorEngine::applyDegreeMark()
+{
+    // 刚按下运算符、右操作数还没输入时，显示区里放着的是左操作数：
+    // 此时按 ° 会把左操作数误标成角度，直接忽略
+    if (m_hasPendingOperator && m_waitingOperand)
+        return;
+
+    // ° 是一个“后缀”：重复按不叠加，只保留一个
+    if (m_degreeMarked)
+        return;
+
+    m_degreeMarked = true;
+    m_display += kDegreeSign;
+
+    // 打上 ° 就代表这一笔输入结束：再按数字会开启新的操作数，
+    // ° 不会黏到下一个数字上（"30°" 之后按 5 得到的是 5，而不是 30°5）
+    m_state = State::Result;
+    m_waitingOperand = true;
 }
 
 void CalculatorEngine::toggleAngleMode()
@@ -426,6 +461,15 @@ void CalculatorEngine::applyNegate()
 
 void CalculatorEngine::applyBackspace()
 {
+    // 显示区末尾的 ° 是后缀标记，先摘掉它（"30°" → "30"）。
+    // 这一步要放在“结果态不允许退格”之前，否则用户没法撤销按错的 °
+    if (m_degreeMarked) {
+        clearDegreeMark();
+        m_state = State::Inputting;
+        m_waitingOperand = false;
+        return;
+    }
+
     // 只有“输入中”才允许退格：结果/错误状态退格没有意义，
     // 直接忽略可以避免把已经算好的结果改坏（需求 6）
     if (m_state != State::Inputting)
@@ -498,12 +542,32 @@ void CalculatorEngine::beginNewEntry()
     m_display = QStringLiteral("0");
     m_state = State::Inputting;
     m_waitingOperand = false;
+    m_degreeMarked = false;     // 新操作数不再继承上一个数字的 ° 标记
+}
+
+void CalculatorEngine::clearDegreeMark()
+{
+    if (!m_degreeMarked)
+        return;
+
+    m_degreeMarked = false;
+    if (m_display.endsWith(kDegreeSign))
+        m_display.chop(1);
+
+    // 只有 ° 没有数字之类的极端情况，回到 0，避免显示区变空
+    if (m_display.isEmpty() || m_display == QStringLiteral("-"))
+        m_display = QStringLiteral("0");
 }
 
 double CalculatorEngine::currentValue() const
 {
+    // 显示区可能是 "30°" 这样带后缀的文本，解析前先摘掉 °
+    QString text = m_display;
+    if (text.endsWith(kDegreeSign))
+        text.chop(1);
+
     bool ok = false;
-    const double value = m_display.toDouble(&ok);
+    const double value = text.toDouble(&ok);
     return ok ? value : 0.0;    // "0." 之类的未完成输入也能被正确解析
 }
 
@@ -511,6 +575,7 @@ void CalculatorEngine::showValue(double value, int precision)
 {
     m_display = formatNumber(value, precision);
     m_state = State::Result;
+    m_degreeMarked = false;     // 结果本身不带角度后缀
 }
 
 void CalculatorEngine::showError(const QString &message)
@@ -523,6 +588,7 @@ void CalculatorEngine::showError(const QString &message)
     m_pendingOperator = CalculatorKey::Equals;
     m_hasLastOperation = false;
     m_waitingOperand = false;
+    m_degreeMarked = false;
 }
 
 void CalculatorEngine::appendHistory(const QString &expression, const QString &result)

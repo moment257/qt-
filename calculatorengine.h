@@ -40,6 +40,7 @@ enum class CalculatorKey {
     Sine,           ///< sin
     Cosine,         ///< cos
     Tangent,        ///< tan
+    DegreeMark,     ///< ° 把当前数字标记为角度（优先于全局 DEG/RAD 模式）
     AngleMode,      ///< 切换角度制 / 弧度制（只改模式，不参与运算）
 
     Backspace,      ///< ⌫ 退格
@@ -138,6 +139,9 @@ public:
     /// 角度单位按钮的显示文本：DEG / RAD
     QString angleModeText() const;
 
+    /// 当前数字是否被 ° 显式标记为角度（显示区末尾带 °）
+    bool hasDegreeMark() const { return m_degreeMarked; }
+
 private:
     /// 输入阶段，决定了同一个按键在不同时刻应该产生什么行为
     enum class State {
@@ -160,6 +164,7 @@ private:
     void applyEquals();
     void applyUnary(CalculatorKey op);
     void applyTrig(CalculatorKey op);
+    void applyDegreeMark();     ///< ° 给当前数字打上“角度”后缀
     void toggleAngleMode();
     void applyPercent();
     void applyNegate();
@@ -169,6 +174,7 @@ private:
 
     // ---- 内部工具 ----
     void beginNewEntry();                                   ///< 开始输入新的操作数
+    void clearDegreeMark();                                 ///< 摘掉显示区末尾的 ° 并清除标记
     double currentValue() const;                            ///< 把显示文本解析成数值
     void showValue(double value, int precision = kDefaultPrecision); ///< 显示数值并置为 Result
     void showError(const QString &message);                ///< 进入错误状态
@@ -208,6 +214,10 @@ private:
 
     /// 三角函数的输入单位，默认角度制；与内存一样属于“设置”，C 键不会重置它
     AngleMode m_angleMode = AngleMode::Degree;
+
+    /// 当前操作数是否带 ° 标记：为 true 时显示区末尾有 °，
+    /// 且随后的 sin/cos/tan 一定按角度制换算（即使全局是 RAD 模式）
+    bool m_degreeMarked = false;
 };
 
 #endif // CALCULATORENGINE_H

@@ -137,6 +137,25 @@ QPushButton#btnAdd:hover {
     background-color: #3F3F3F;
 }
 
+/* 角度符号键：按下后当前数字被标成角度，按钮同步变琥珀色，
+   提示接下来的 sin/cos/tan 会按角度制换算（与全局 DEG/RAD 模式无关） */
+QPushButton#btnDegree {
+    background-color: #323232;
+    color: #D8D8D8;
+    font-size: 17px;
+    border: 1px solid #323232;
+}
+
+QPushButton#btnDegree:hover {
+    background-color: #3F3F3F;
+}
+
+QPushButton#btnDegree[marked="true"] {
+    background-color: #3A3326;
+    color: #E8B767;
+    border: 1px solid #E8B767;
+}
+
 /* 角度单位切换键：DEG 是深色底 + 绿字，切到 RAD 后变成琥珀色底 + 深字，
    一眼就能看出当前用的不是默认单位 */
 QPushButton#btnAngleMode {
@@ -265,6 +284,7 @@ void Calculate::setupButtonBindings()
         {ui->btnSin, CalculatorKey::Sine},
         {ui->btnCos, CalculatorKey::Cosine},
         {ui->btnTan, CalculatorKey::Tangent},
+        {ui->btnDegree, CalculatorKey::DegreeMark},
         {ui->btnAngleMode, CalculatorKey::AngleMode},
         {ui->btnBackspace, CalculatorKey::Backspace},
         {ui->btnClearEntry, CalculatorKey::ClearEntry},
@@ -335,6 +355,14 @@ void Calculate::refreshDisplay()
         // 动态属性变化后要手动让样式表重新生效
         ui->btnAngleMode->style()->unpolish(ui->btnAngleMode);
         ui->btnAngleMode->style()->polish(ui->btnAngleMode);
+    }
+
+    // 角度符号键：当前数字带 ° 标记时高亮，用户能看出这个后缀还生效
+    const bool marked = m_engine.hasDegreeMark();
+    if (ui->btnDegree->property("marked").toBool() != marked) {
+        ui->btnDegree->setProperty("marked", marked);
+        ui->btnDegree->style()->unpolish(ui->btnDegree);
+        ui->btnDegree->style()->polish(ui->btnDegree);
     }
 
     adjustDisplayFont();
